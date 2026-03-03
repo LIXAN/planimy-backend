@@ -10,7 +10,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.error(f"Error checking password: {e}")
         return False
 
 def get_password_hash(password: str) -> str:
