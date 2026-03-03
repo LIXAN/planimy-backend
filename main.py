@@ -6,7 +6,7 @@ import os # Importante para leer las variables de DigitalOcean
 # Base.metadata.create_all(bind=engine) # Se utilizará Alembic mejor
 
 app = FastAPI(
-    title="Planimy API - Lexian", 
+    title="Planimy API - LIXAN", 
     version="1.0.0",
     description="Backend para la gestión de inventario inmobiliario"
 )
@@ -42,7 +42,7 @@ app.include_router(rrhh_router.router)
 def read_root():
     return {
         "message": "API Backend Planimy funcionando",
-        "brand": "Lexian",
+        "brand": "LIXAN",
         "docs": "/docs"
     }
 
@@ -62,5 +62,5 @@ def health_check():
         "status": "online",
         "environment": f"{prefix}...",
         "version": "1.0.0",
-        "brand": "Lexian"
+        "brand": "LIXAN"
     }
