@@ -52,6 +52,7 @@ class Proyecto(BaseModel):
     es_vis = Column(Boolean, default=False)
     tipo_inmueble = Column(String, default="Apartamentos")
     zonas_sociales = Column(JSON, nullable=True)
+    imagen_url = Column(String, nullable=True)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
     
     torres = relationship("Torre", back_populates="proyecto")
@@ -81,6 +82,7 @@ class Piso(BaseModel):
     __tablename__ = "pisos"
     numero_nivel = Column(Integer, nullable=False)
     cantidad_aptos = Column(Integer, nullable=False)
+    zona_social = Column(JSON, nullable=True) # Changed from String to JSON to support multiple areas
     torre_id = Column(UUID(as_uuid=True), ForeignKey("torres.id"))
     
     torre = relationship("Torre", back_populates="pisos")
@@ -128,3 +130,20 @@ class Apartamento(BaseModel):
         self.estado = EstadoApartamento.disponible
         self.asesor_id = None
         self.comprador_id = None
+
+class EstadoEmpleado(enum.Enum):
+    activo = "activo"
+    inactivo = "inactivo"
+
+class Empleado(BaseModel):
+    __tablename__ = "empleados"
+    nombre_completo = Column(String, nullable=False)
+    documento_identidad = Column(String, nullable=True)
+    cargo = Column(String, nullable=False)
+    telefono = Column(String, nullable=True)
+    fecha_contratacion = Column(DateTime, nullable=True)
+    salario = Column(Float, nullable=True)
+    estado = Column(Enum(EstadoEmpleado), default=EstadoEmpleado.activo)
+    usuario_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    
+    usuario = relationship("Usuario")

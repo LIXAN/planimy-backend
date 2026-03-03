@@ -11,10 +11,20 @@ class ProyectoBase(BaseModel):
     es_vis: bool = False
     tipo_inmueble: Optional[str] = "Apartamentos"
     zonas_sociales: Optional[Any] = None
+    imagen_url: Optional[str] = None
     admin_id: Optional[UUID] = None
 
 class ProyectoCreate(ProyectoBase):
     pass
+
+class ProyectoUpdate(BaseModel):
+    nombre: Optional[str] = None
+    departamento: Optional[str] = None
+    ciudad: Optional[str] = None
+    es_vis: Optional[bool] = None
+    tipo_inmueble: Optional[str] = None
+    zonas_sociales: Optional[Any] = None
+    imagen_url: Optional[str] = None
 
 class TorreBase(BaseModel):
     nombre: str
@@ -87,10 +97,12 @@ class ApartamentoTipoCreate(BaseModel):
 class PisoBase(BaseModel):
     numero_nivel: int
     cantidad_aptos: int
+    zona_social: Optional[List[str]] = None
 
 class PisoCreate(BaseModel):
     numero_nivel: int
     apartamentos_tipos: List[ApartamentoTipoCreate]
+    zona_social: Optional[List[str]] = None
 
 class PisoOut(PisoBase):
     id: UUID
@@ -113,3 +125,8 @@ class TipoPlantillaUpdate(BaseModel):
     area_privada: Optional[float] = None
     habitaciones: Optional[int] = None
     banos: Optional[int] = None
+
+class PisoUpdate(BaseModel):
+    numero_nivel: Optional[int] = None
+    zona_social: Optional[List[str]] = None
+    apartamentos_tipos: Optional[List[ApartamentoTipoCreate]] = None
