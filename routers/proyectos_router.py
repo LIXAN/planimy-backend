@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 import os
 import shutil
+import boto3
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
 from database import get_db
 from models.models import Proyecto, Torre, TipoPlantilla, Usuario, RolUsuario, ZonaSocialOpcion
-from schemas.inmob_schemas import ProyectoCreate, ProyectoOut, ProyectoUpdate, TorreCreate, TorreOut, TipoPlantillaCreate, TipoPlantillaOut, PisoCreate, PisoOut, TipoPlantillaUpdate, TorreConPisosOut, PisoUpdate, ZonaSocialOpcionCreate, ZonaSocialOpcionOut
+from schemas.inmob_schemas import ProyectoCreate, ProyectoOut, ProyectoUpdate, TorreCreate, TorreUpdate, TorreOut, TipoPlantillaCreate, TipoPlantillaOut, PisoCreate, PisoOut, TipoPlantillaUpdate, TorreConPisosOut, PisoUpdate, ZonaSocialOpcionCreate, ZonaSocialOpcionOut
 from routers.auth_router import get_current_user
 import uuid
 from models.models import Piso, Apartamento, EstadoApartamento
@@ -20,6 +20,47 @@ TIPOS_DIR = os.path.join(UPLOAD_DIR, "tipos")
 os.makedirs(PROYECTOS_DIR, exist_ok=True)
 os.makedirs(TIPOS_DIR, exist_ok=True)
 
+# DigitalOcean Spaces config
+SPACES_KEY = os.getenv("SPACES_KEY")
+SPACES_SECRET = os.getenv("SPACES_SECRET")
+SPACES_URL = os.getenv("SPACES_URL", "https://nyc3.digitaloceanspaces.com")
+SPACES_BUCKET = os.getenv("SPACES_BUCKET")
+
+s3_client = None
+if SPACES_KEY and SPACES_SECRET and SPACES_BUCKET:
+    s3_client = boto3.client('s3',
+        region_name='nyc3',
+        endpoint_url=SPACES_URL,
+        aws_access_key_id=SPACES_KEY,
+        aws_secret_access_key=SPACES_SECRET
+    )
+
+def upload_to_spaces_or_local(file: UploadFile, directory: str, file_name: str) -> str:
+    if s3_client:
+        # Subir a DigitalOcean Spaces
+        object_name = f"{directory}/{file_name}"
+        s3_client.upload_fileobj(
+            file.file,
+            SPACES_BUCKET,
+            object_name,
+            ExtraArgs={
+                "ACL": "public-read",
+                "ContentType": file.content_type
+            }
+        )
+        # Reconstruir la URL pública asumiendo el formato estándar de DO Spaces:
+        # https://{bucket_name}.{region}.digitaloceanspaces.com/{object_name}
+        base_url = SPACES_URL.replace("https://", f"https://{SPACES_BUCKET}.")
+        return f"{base_url}/{object_name}"
+    else:
+        # Subir localmente (fallback para desarrollo)
+        dir_path = os.path.join(UPLOAD_DIR, directory)
+        os.makedirs(dir_path, exist_ok=True)
+        file_path = os.path.join(dir_path, file_name)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        return f"/api/uploads/{directory}/{file_name}"
+
 @router.post("/upload-image", response_model=dict)
 def upload_proyecto_image(file: UploadFile = File(...), current_user: Usuario = Depends(get_current_user)):
     if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
@@ -27,13 +68,8 @@ def upload_proyecto_image(file: UploadFile = File(...), current_user: Usuario = 
     
     file_extension = file.filename.split(".")[-1]
     file_name = f"{uuid.uuid4()}.{file_extension}"
-    file_path = os.path.join(PROYECTOS_DIR, file_name)
     
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # The URL that the frontend will use to fetch the image
-    image_url = f"/api/uploads/proyectos/{file_name}"
+    image_url = upload_to_spaces_or_local(file, "proyectos", file_name)
     return {"imagen_url": image_url}
 
 @router.post("/tipos/upload-image", response_model=dict)
@@ -43,12 +79,8 @@ def upload_tipo_image(file: UploadFile = File(...), current_user: Usuario = Depe
         
     file_extension = file.filename.split(".")[-1]
     file_name = f"{uuid.uuid4()}.{file_extension}"
-    file_path = os.path.join(TIPOS_DIR, file_name)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    image_url = f"/api/uploads/tipos/{file_name}"
+
+    image_url = upload_to_spaces_or_local(file, "tipos", file_name)
     return {"imagen_url": image_url}
 
 @router.get("/zonas-sociales/opciones", response_model=List[ZonaSocialOpcionOut])
@@ -110,6 +142,19 @@ def update_proyecto(proyecto_id: uuid.UUID, proyecto_update: ProyectoUpdate, db:
     db.refresh(proyecto)
     return proyecto
 
+@router.delete("/{proyecto_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_proyecto(proyecto_id: uuid.UUID, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    if current_user.rol != RolUsuario.super_admin:
+        raise HTTPException(status_code=403, detail="Solo los super administradores pueden eliminar proyectos")
+    
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+        
+    db.delete(proyecto)
+    db.commit()
+    return None
+
 @router.post("/{proyecto_id}/torres", response_model=TorreOut)
 def create_torre(proyecto_id: uuid.UUID, torre: TorreCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
@@ -119,11 +164,47 @@ def create_torre(proyecto_id: uuid.UUID, torre: TorreCreate, db: Session = Depen
     if not proyecto:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
         
+    torre.nombre = " ".join(torre.nombre.split())
+    
+    existing_torre = db.query(Torre).filter(
+        Torre.proyecto_id == proyecto_id,
+        func.lower(func.replace(Torre.nombre, ' ', '')) == torre.nombre.lower().replace(' ', '')
+    ).first()
+    if existing_torre:
+        raise HTTPException(status_code=400, detail=f"Ya existe una torre o manzana con el nombre '{existing_torre.nombre}' en este proyecto.")
+        
     new_torre = Torre(nombre=torre.nombre, numero_pisos=torre.numero_pisos, proyecto_id=proyecto_id)
     db.add(new_torre)
     db.commit()
     db.refresh(new_torre)
     return new_torre
+
+@router.put("/{proyecto_id}/torres/{torre_id}", response_model=TorreOut)
+def update_torre(proyecto_id: uuid.UUID, torre_id: uuid.UUID, torre_update: TorreUpdate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para editar torres")
+    
+    torre = db.query(Torre).filter(Torre.id == torre_id, Torre.proyecto_id == proyecto_id).first()
+    if not torre:
+        raise HTTPException(status_code=404, detail="Torre no encontrada")
+        
+    if torre_update.nombre:
+        torre_update.nombre = " ".join(torre_update.nombre.split())
+        existing_torre = db.query(Torre).filter(
+            Torre.id != torre_id,
+            Torre.proyecto_id == proyecto_id,
+            func.lower(func.replace(Torre.nombre, ' ', '')) == torre_update.nombre.lower().replace(' ', '')
+        ).first()
+        if existing_torre:
+            raise HTTPException(status_code=400, detail=f"Ya existe una torre o manzana con el nombre '{existing_torre.nombre}' en este proyecto.")
+            
+    update_data = torre_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(torre, key, value)
+        
+    db.commit()
+    db.refresh(torre)
+    return torre
 
 @router.post("/{proyecto_id}/tipos", response_model=TipoPlantillaOut)
 def create_tipo_plantilla(proyecto_id: uuid.UUID, tipo: TipoPlantillaCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
@@ -156,6 +237,61 @@ def get_torre(proyecto_id: uuid.UUID, torre_id: uuid.UUID, db: Session = Depends
         raise HTTPException(status_code=404, detail="Torre no encontrada")
     return torre
 
+@router.post("/{proyecto_id}/torres/{torre_id}/duplicar", response_model=TorreConPisosOut)
+def duplicate_torre(proyecto_id: uuid.UUID, torre_id: uuid.UUID, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para duplicar torres")
+        
+    original_torre = db.query(Torre).filter(Torre.id == torre_id, Torre.proyecto_id == proyecto_id).first()
+    if not original_torre:
+        raise HTTPException(status_code=404, detail="Torre no encontrada")
+        
+    base_name = original_torre.nombre
+    new_torre_name = base_name + " (Copia)"
+    counter = 1
+    
+    while True:
+        existing_copy = db.query(Torre).filter(
+            Torre.proyecto_id == proyecto_id,
+            func.lower(func.replace(Torre.nombre, ' ', '')) == new_torre_name.lower().replace(' ', '')
+        ).first()
+        if not existing_copy:
+            break
+        counter += 1
+        new_torre_name = f"{base_name} (Copia {counter})"
+    
+    nuevo_torre = Torre(
+        nombre=new_torre_name,
+        numero_pisos=original_torre.numero_pisos,
+        numero_aptos=original_torre.numero_aptos,
+        proyecto_id=proyecto_id
+    )
+    db.add(nuevo_torre)
+    db.flush()
+    
+    from models.models import Piso, Apartamento
+    for original_piso in original_torre.pisos:
+        nuevo_piso = Piso(
+            numero_nivel=original_piso.numero_nivel,
+            cantidad_aptos=original_piso.cantidad_aptos,
+            zona_social=original_piso.zona_social,
+            torre_id=nuevo_torre.id
+        )
+        db.add(nuevo_piso)
+        db.flush()
+        
+        for original_apto in original_piso.apartamentos:
+            db.add(Apartamento(
+                precio=original_apto.precio,
+                tipo_id=original_apto.tipo_id,
+                piso_id=nuevo_piso.id,
+                estado=EstadoApartamento.disponible
+            ))
+            
+    db.commit()
+    db.refresh(nuevo_torre)
+    return nuevo_torre
+
 @router.post("/{proyecto_id}/torres/{torre_id}/pisos", response_model=PisoOut)
 def create_piso(proyecto_id: uuid.UUID, torre_id: uuid.UUID, piso: PisoCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
@@ -164,6 +300,10 @@ def create_piso(proyecto_id: uuid.UUID, torre_id: uuid.UUID, piso: PisoCreate, d
     torre = db.query(Torre).filter(Torre.id == torre_id, Torre.proyecto_id == proyecto_id).first()
     if not torre:
         raise HTTPException(status_code=404, detail="Torre no encontrada")
+        
+    existing_piso = db.query(Piso).filter(Piso.torre_id == torre_id, Piso.numero_nivel == piso.numero_nivel).first()
+    if existing_piso:
+        raise HTTPException(status_code=400, detail=f"Ya existe un piso con el número de nivel {piso.numero_nivel} en esta torre")
         
     # Calculate bounds from input
     cantidad_aptos = sum(apto_tipo.cantidad for apto_tipo in piso.apartamentos_tipos)
@@ -262,7 +402,10 @@ def update_piso(proyecto_id: uuid.UUID, torre_id: uuid.UUID, piso_id: uuid.UUID,
         
     if data.zona_social is not None:
         piso.zona_social = data.zona_social
-    if data.numero_nivel is not None:
+    if data.numero_nivel is not None and data.numero_nivel != piso.numero_nivel:
+        existing_piso = db.query(Piso).filter(Piso.torre_id == torre_id, Piso.numero_nivel == data.numero_nivel).first()
+        if existing_piso:
+            raise HTTPException(status_code=400, detail=f"Ya existe un piso con el número de nivel {data.numero_nivel} en esta torre")
         piso.numero_nivel = data.numero_nivel
         
     if data.apartamentos_tipos is not None:
