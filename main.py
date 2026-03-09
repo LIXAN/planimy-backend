@@ -58,7 +58,33 @@ app.include_router(rrhh_router.router)
 
 # --- ENDPOINTS DE CONTROL ---
 
-@app.get("/")
+import io
+from fastapi.responses import PlainTextResponse
+
+@app.get("/run-migrations", response_class=PlainTextResponse)
+def trigger_migrations():
+    import sys
+    # Capture standard output to return it to the browser
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = new_stdout = io.StringIO()
+    sys.stderr = new_stderr = io.StringIO()
+    
+    try:
+        print("Starting Alembic migrations locally via API...")
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        print("Alembic migrations successful.")
+        result = "SUCCESS:\n" + new_stdout.getvalue()
+    except Exception as e:
+        print(f"Error running migrations: {e}")
+        traceback.print_exc()
+        result = "ERROR:\n" + new_stdout.getvalue() + "\nSTDERR:\n" + new_stderr.getvalue()
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        
+    return result@app.get("/")
 def read_root():
     return {
         "message": "API Backend Planimy funcionando",
