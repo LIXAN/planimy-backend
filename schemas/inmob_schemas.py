@@ -4,6 +4,15 @@ from uuid import UUID
 from datetime import datetime
 from models.models import EstadoApartamento
 
+class ZonaSocialOpcionBase(BaseModel):
+    nombre: str
+
+class ZonaSocialOpcionCreate(ZonaSocialOpcionBase):
+    pass
+
+class ZonaSocialOpcionOut(ZonaSocialOpcionBase):
+    id: UUID
+
 class ProyectoBase(BaseModel):
     nombre: str
     departamento: Optional[str] = None
@@ -12,6 +21,9 @@ class ProyectoBase(BaseModel):
     tipo_inmueble: Optional[str] = "Apartamentos"
     zonas_sociales: Optional[Any] = None
     imagen_url: Optional[str] = None
+    telefono_contacto: Optional[str] = None
+    correo_contacto: Optional[str] = None
+    direccion: Optional[str] = None
     admin_id: Optional[UUID] = None
 
 class ProyectoCreate(ProyectoBase):
@@ -25,6 +37,9 @@ class ProyectoUpdate(BaseModel):
     tipo_inmueble: Optional[str] = None
     zonas_sociales: Optional[Any] = None
     imagen_url: Optional[str] = None
+    telefono_contacto: Optional[str] = None
+    correo_contacto: Optional[str] = None
+    direccion: Optional[str] = None
 
 class TorreBase(BaseModel):
     nombre: str
@@ -49,6 +64,7 @@ class TipoPlantillaBase(BaseModel):
     area_privada: float
     habitaciones: int
     banos: int
+    imagen_url: Optional[str] = None
 
 class TipoPlantillaCreate(TipoPlantillaBase):
     pass
@@ -125,6 +141,7 @@ class TipoPlantillaUpdate(BaseModel):
     area_privada: Optional[float] = None
     habitaciones: Optional[int] = None
     banos: Optional[int] = None
+    imagen_url: Optional[str] = None
 
 class PisoUpdate(BaseModel):
     numero_nivel: Optional[int] = None

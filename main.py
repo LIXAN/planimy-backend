@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 import os # Importante para leer las variables de DigitalOcean
@@ -8,8 +9,12 @@ import os # Importante para leer las variables de DigitalOcean
 app = FastAPI(
     title="Planimy API - LIXAN", 
     version="1.0.0",
-    description="Backend para la gestión de inventario inmobiliario"
 )
+
+# Serve uploaded files
+import os
+os.makedirs("uploads", exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # --- CONFIGURACIÓN DE CORS PARA PRODUCCIÓN ---
 # Aquí permitimos que el dominio real de Planimy se comunique con la API

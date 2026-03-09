@@ -44,6 +44,11 @@ class Comprador(BaseModel):
     entidad_financiera = Column(String, nullable=True)
     estado_credito = Column(Enum(EstadoCredito), nullable=True)
 
+class ZonaSocialOpcion(Base):
+    __tablename__ = "zona_social_opcion"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    nombre = Column(String, unique=True, nullable=False)
+
 class Proyecto(BaseModel):
     __tablename__ = "proyectos"
     nombre = Column(String, nullable=False)
@@ -53,6 +58,9 @@ class Proyecto(BaseModel):
     tipo_inmueble = Column(String, default="Apartamentos")
     zonas_sociales = Column(JSON, nullable=True)
     imagen_url = Column(String, nullable=True)
+    telefono_contacto = Column(String, nullable=True)
+    correo_contacto = Column(String, nullable=True)
+    direccion = Column(String, nullable=True)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
     
     torres = relationship("Torre", back_populates="proyecto")
@@ -95,6 +103,7 @@ class TipoPlantilla(BaseModel):
     area_privada = Column(Float, nullable=False)
     habitaciones = Column(Integer, nullable=False)
     banos = Column(Integer, nullable=False)
+    imagen_url = Column(String, nullable=True)
     proyecto_id = Column(UUID(as_uuid=True), ForeignKey("proyectos.id"), nullable=True)
 
     proyecto = relationship("Proyecto", back_populates="tipos_plantilla")
