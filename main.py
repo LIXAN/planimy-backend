@@ -61,6 +61,26 @@ app.include_router(rrhh_router.router)
 import io
 from fastapi.responses import PlainTextResponse
 
+@app.get("/schema-dump", response_class=PlainTextResponse)
+def dump_db_schema():
+    try:
+        from database import engine
+        from sqlalchemy import inspect
+        import json
+        
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        
+        schema = {}
+        for t in tables:
+            cols = [c["name"] for c in inspector.get_columns(t)]
+            schema[t] = cols
+            
+        return json.dumps(schema, indent=2)
+    except Exception as e:
+        import traceback
+        return "ERROR:\n" + str(e) + "\n" + traceback.format_exc()
+
 @app.get("/run-migrations", response_class=PlainTextResponse)
 def trigger_migrations():
     import subprocess
