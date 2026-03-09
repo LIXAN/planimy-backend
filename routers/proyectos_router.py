@@ -1,21 +1,81 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+import os
+import shutil
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
 from database import get_db
-from models.models import Proyecto, Torre, TipoPlantilla, Usuario, RolUsuario
-from schemas.inmob_schemas import ProyectoCreate, ProyectoOut, ProyectoUpdate, TorreCreate, TorreOut, TipoPlantillaCreate, TipoPlantillaOut, PisoCreate, PisoOut, TipoPlantillaUpdate, TorreConPisosOut, PisoUpdate
+from models.models import Proyecto, Torre, TipoPlantilla, Usuario, RolUsuario, ZonaSocialOpcion
+from schemas.inmob_schemas import ProyectoCreate, ProyectoOut, ProyectoUpdate, TorreCreate, TorreOut, TipoPlantillaCreate, TipoPlantillaOut, PisoCreate, PisoOut, TipoPlantillaUpdate, TorreConPisosOut, PisoUpdate, ZonaSocialOpcionCreate, ZonaSocialOpcionOut
 from routers.auth_router import get_current_user
 import uuid
 from models.models import Piso, Apartamento, EstadoApartamento
 
 router = APIRouter(prefix="/proyectos", tags=["Proyectos"])
 
-@router.get("/", response_model=List[ProyectoOut])
+UPLOAD_DIR = "uploads"
+PROYECTOS_DIR = os.path.join(UPLOAD_DIR, "proyectos")
+TIPOS_DIR = os.path.join(UPLOAD_DIR, "tipos")
+
+os.makedirs(PROYECTOS_DIR, exist_ok=True)
+os.makedirs(TIPOS_DIR, exist_ok=True)
+
+@router.post("/upload-image", response_model=dict)
+def upload_proyecto_image(file: UploadFile = File(...), current_user: Usuario = Depends(get_current_user)):
+    if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para subir imágenes")
+    
+    file_extension = file.filename.split(".")[-1]
+    file_name = f"{uuid.uuid4()}.{file_extension}"
+    file_path = os.path.join(PROYECTOS_DIR, file_name)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # The URL that the frontend will use to fetch the image
+    image_url = f"/api/uploads/proyectos/{file_name}"
+    return {"imagen_url": image_url}
+
+@router.post("/tipos/upload-image", response_model=dict)
+def upload_tipo_image(file: UploadFile = File(...), current_user: Usuario = Depends(get_current_user)):
+    if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para subir imágenes")
+        
+    file_extension = file.filename.split(".")[-1]
+    file_name = f"{uuid.uuid4()}.{file_extension}"
+    file_path = os.path.join(TIPOS_DIR, file_name)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    image_url = f"/api/uploads/tipos/{file_name}"
+    return {"imagen_url": image_url}
+
+@router.get("/zonas-sociales/opciones", response_model=List[ZonaSocialOpcionOut])
+def get_zonas_sociales_opciones(db: Session = Depends(get_db)):
+    return db.query(ZonaSocialOpcion).all()
+
+@router.post("/zonas-sociales/opciones", response_model=ZonaSocialOpcionOut)
+def create_zona_social_opcion(zona: ZonaSocialOpcionCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
+        raise HTTPException(status_code=403, detail="No tienes permisos para crear opciones de zonas sociales")
+    
+    # Check if exists (case insensitive could be better, but exact match for now)
+    existing = db.query(ZonaSocialOpcion).filter(ZonaSocialOpcion.nombre == zona.nombre).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Esa zona social ya existe")
+        
+    new_zona = ZonaSocialOpcion(nombre=zona.nombre)
+    db.add(new_zona)
+    db.commit()
+    db.refresh(new_zona)
+    return new_zona
+
+@router.get("", response_model=List[ProyectoOut])
 def get_proyectos(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     return db.query(Proyecto).all()
 
-@router.post("/", response_model=ProyectoOut)
+@router.post("", response_model=ProyectoOut)
 def create_proyecto(proyecto: ProyectoCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     if current_user.rol not in [RolUsuario.super_admin, RolUsuario.admin]:
         raise HTTPException(status_code=403, detail="No tienes permisos para crear proyectos")
