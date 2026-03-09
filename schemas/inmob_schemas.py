@@ -48,6 +48,10 @@ class TorreBase(BaseModel):
 class TorreCreate(TorreBase):
     pass
 
+class TorreUpdate(BaseModel):
+    nombre: Optional[str] = None
+    numero_pisos: Optional[int] = None
+
 class TorreOut(TorreBase):
     numero_aptos: int
     id: UUID
